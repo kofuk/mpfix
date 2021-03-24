@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
-	"log"
 	"os"
 
 	"golang.org/x/text/encoding/japanese"
@@ -27,36 +26,34 @@ func writeN(writer *bufio.Writer, buf []byte, n int) bool {
 	return true
 }
 
-func checkSig(buf []byte) {
+func checkSig(buf []byte) bool {
 	if buf[0] == 'I' && buf[1] == 'D' && buf[2] == '3' {
-		return
+		return true
 	}
-	log.Fatal("Invalid file signature")
+	return false
 }
 
-func checkVersion(version byte) {
-	if version != 3 {
-		log.Fatal("Version is not 3.")
+func checkVersion(version []byte) bool {
+	if version[0] != 3 {
+		return false
 	}
+	return true
 }
 
-func checkFlags(flags byte) {
-	async := (flags>>7)&0x1 == 1
-	hasExt := (flags>>6)&0x1 == 1
-	experiment := (flags>>5)&0x1 == 1
-	hasFooter := (flags>>4)&0x1 == 1
-	if async || hasExt || experiment || hasFooter {
-		log.Fatal("Unsupported flags.")
-	}
+func checkFlags(flags []byte) bool {
+	f := flags[0]
+	async := (f>>7)&0x1 == 1
+	hasExt := (f>>6)&0x1 == 1
+	experiment := (f>>5)&0x1 == 1
+	hasFooter := (f>>4)&0x1 == 1
+	return !(async || hasExt || experiment || hasFooter)
 }
 
-func checkFrameFlags(flags byte) {
+func checkFrameFlags(flags byte) bool {
 	compressed := (flags>>3)&0x1 == 1
 	encrypted := (flags>>2)&0x1 == 1
 	async := (flags>>1)&0x1 == 1
-	if compressed || encrypted || async {
-		log.Fatal("Unsupported frame flags.")
-	}
+	return !(compressed || encrypted || async)
 }
 
 func shouldRewrite(fid string) bool {
@@ -109,7 +106,9 @@ func convertFile(inPath, outPath string) bool {
 	if !readN(reader, buf, 3) {
 		return false
 	}
-	checkSig(buf)
+	if !checkSig(buf) {
+		return false
+	}
 	if !writeN(writer, buf, 3) {
 		return false
 	}
@@ -117,10 +116,9 @@ func convertFile(inPath, outPath string) bool {
 	if !readN(reader, buf, 2) {
 		return false
 	}
-	version := buf[0]
-	minor := buf[1]
-	_ = minor
-	checkVersion(version)
+	if !checkVersion(buf) {
+		return false
+	}
 	if !writeN(writer, buf, 2) {
 		return false
 	}
@@ -128,7 +126,9 @@ func convertFile(inPath, outPath string) bool {
 	if !readN(reader, buf, 1) {
 		return false
 	}
-	checkFlags(buf[0])
+	if !checkFlags(buf) {
+		return false
+	}
 	if !writeN(writer, buf, 1) {
 		return false
 	}
@@ -165,7 +165,9 @@ func convertFile(inPath, outPath string) bool {
 
 		if shouldRewrite(fid) {
 			formatFlags := buf[9]
-			checkFrameFlags(formatFlags)
+			if !checkFrameFlags(formatFlags) {
+				return false
+			}
 
 			fdata := make([]byte, fsize)
 			if !readN(reader, fdata, fsize) {
@@ -221,9 +223,8 @@ func convertFile(inPath, outPath string) bool {
 		i += 10 + fsize
 	}
 
-	_, err = io.Copy(writer, reader)
-	if err != nil {
-		log.Fatal(err)
+	if _, err := io.Copy(writer, reader); err != nil {
+		return false
 	}
 	writer.Flush()
 
