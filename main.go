@@ -3,7 +3,9 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
+	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"golang.org/x/text/encoding/japanese"
@@ -227,7 +229,24 @@ func convertFile(inPath, outPath string) bool {
 }
 
 func main() {
-	if !convertFile("/tmp/a.mp3", "/tmp/out.mp3") {
-		os.Exit(1)
+	var inputPaths []string
+	for _, arg := range os.Args[1:] {
+		inputs, err := getInputFiles(arg)
+		if err != nil {
+			log.Fatal(err)
+		}
+		inputPaths = append(inputPaths, inputs...)
+	}
+
+	for _, inputPath := range inputPaths {
+		outputPath := getOutPath(inputPath)
+		if !convertFile(inputPath, outputPath) {
+			fmt.Printf("Error converting %s\n", inputPath)
+			continue
+		}
+
+		if err := moveFile(outputPath, inputPath); err != nil {
+			fmt.Printf("Error renaming %s: %s\n", outputPath, err)
+		}
 	}
 }
