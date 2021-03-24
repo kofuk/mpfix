@@ -11,22 +11,20 @@ import (
 	"golang.org/x/text/transform"
 )
 
-func readn(reader *bufio.Reader, buf []byte, n int) {
+func readN(reader *bufio.Reader, buf []byte, n int) bool {
 	_, err := io.ReadFull(reader, buf[:n])
 	if err != nil {
-		log.Fatal(err)
+		return false
 	}
+	return true
 }
 
-func writen(writer *bufio.Writer, buf []byte, n int) {
+func writeN(writer *bufio.Writer, buf []byte, n int) bool {
 	outn, err := writer.Write(buf[:n])
-	if err != nil {
-		log.Fatal(err)
+	if err != nil || outn != n {
+		return false
 	}
-
-	if outn != n {
-		log.Fatal("Data not written.")
-	}
+	return true
 }
 
 func checkSig(buf []byte) {
@@ -91,16 +89,16 @@ func isValidFrameId(fid string) bool {
 	return true
 }
 
-func convertFile(inPath, outPath string) {
+func convertFile(inPath, outPath string) bool {
 	file, err := os.Open(inPath)
 	if err != nil {
-		log.Fatal(err)
+		return false
 	}
 	defer file.Close()
 
 	out, err := os.Create(outPath)
 	if err != nil {
-		log.Fatal(err)
+		return false
 	}
 	defer out.Close()
 
@@ -108,30 +106,48 @@ func convertFile(inPath, outPath string) {
 	writer := bufio.NewWriter(out)
 
 	buf := make([]byte, 4096)
-	readn(reader, buf, 3)
+	if !readN(reader, buf, 3) {
+		return false
+	}
 	checkSig(buf)
-	writen(writer, buf, 3)
+	if !writeN(writer, buf, 3) {
+		return false
+	}
 
-	readn(reader, buf, 2)
+	if !readN(reader, buf, 2) {
+		return false
+	}
 	version := buf[0]
 	minor := buf[1]
 	_ = minor
 	checkVersion(version)
-	writen(writer, buf, 2)
+	if !writeN(writer, buf, 2) {
+		return false
+	}
 
-	readn(reader, buf, 1)
+	if !readN(reader, buf, 1) {
+		return false
+	}
 	checkFlags(buf[0])
-	writen(writer, buf, 1)
+	if !writeN(writer, buf, 1) {
+		return false
+	}
 
-	readn(reader, buf, 4)
+	if !readN(reader, buf, 4) {
+		return false
+	}
 	headerLen := int(decodeSync32(buf))
-	writen(writer, buf, 4)
+	if !writeN(writer, buf, 4) {
+		return false
+	}
 
 	modifiedLen := headerLen
 
 	for i := 0; i < headerLen; {
 		// Read all frame header data
-		readn(reader, buf, 10)
+		if !readN(reader, buf, 10) {
+			return false
+		}
 		fid := string(buf[:4])
 
 		// v2.3 encodes this value simply big-endian bytes,
@@ -141,7 +157,9 @@ func convertFile(inPath, outPath string) {
 		fsize := int(binary.BigEndian.Uint32(buf[4:8]))
 
 		if !isValidFrameId(fid) {
-			writen(writer, buf, 10)
+			if !writeN(writer, buf, 10) {
+				return false
+			}
 			break
 		}
 
@@ -150,7 +168,9 @@ func convertFile(inPath, outPath string) {
 			checkFrameFlags(formatFlags)
 
 			fdata := make([]byte, fsize)
-			readn(reader, fdata, fsize)
+			if !readN(reader, fdata, fsize) {
+				return false
+			}
 
 			flags := fdata[0]
 			if flags == 0x00 {
@@ -160,32 +180,44 @@ func convertFile(inPath, outPath string) {
 					japanese.ShiftJIS.NewDecoder(), fdata[1:])
 				if err != nil {
 					// Write as-is
-					writen(writer, buf, 10)
-					writen(writer, fdata, fsize)
+					if !writeN(writer, buf, 10) || !writeN(writer, fdata, fsize) {
+						return false
+					}
 					continue
 				}
 
 				modifiedLen += len(converted) - fsize + 1
 
 				binary.BigEndian.PutUint32(buf[4:8], uint32(len(converted)+1))
-				writen(writer, buf, 10)
+				if !writeN(writer, buf, 10) {
+					return false
+				}
 
 				// Set UTF-8 flag
 				fdata[0] = 0x03
-				writen(writer, fdata, 1) // Write only flag
+				// Write only flag
+				if !writeN(writer, fdata, 1) {
+					return false
+				}
 
-				writen(writer, converted, len(converted))
+				if !writeN(writer, converted, len(converted)) {
+					return false
+				}
 			} else {
-				writen(writer, buf, 10)
-				writen(writer, fdata, fsize)
+				if !writeN(writer, buf, 10) || !writeN(writer, fdata, fsize) {
+					return false
+				}
 			}
 		} else {
-			writen(writer, buf, 10)
+			if !writeN(writer, buf, 10) {
+				return false
+			}
 			if fsize > len(buf) {
 				log.Fatal("Too large frame:", fsize)
 			}
-			readn(reader, buf, fsize)
-			writen(writer, buf, fsize)
+			if !readN(reader, buf, fsize) || !writeN(writer, buf, fsize) {
+				return false
+			}
 		}
 
 		i += 10 + fsize
@@ -201,8 +233,12 @@ func convertFile(inPath, outPath string) {
 	sizeBytes := make([]byte, 4)
 	encodeSync32(sizeBytes, uint32(modifiedLen))
 	out.Write(sizeBytes)
+
+	return true
 }
 
 func main() {
-	convertFile("/tmp/a.mp3", "/tmp/out.mp3")
+	if !convertFile("/tmp/a.mp3", "/tmp/out.mp3") {
+		os.Exit(1)
+	}
 }
