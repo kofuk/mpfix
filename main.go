@@ -91,14 +91,14 @@ func isValidFrameId(fid string) bool {
 	return true
 }
 
-func main() {
-	file, err := os.Open("../a.mp3")
+func convertFile(inPath, outPath string) {
+	file, err := os.Open(inPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer file.Close()
 
-	out, err := os.Create("out.mp3")
+	out, err := os.Create(outPath)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -201,4 +201,8 @@ func main() {
 	sizeBytes := make([]byte, 4)
 	encodeSync32(sizeBytes, uint32(modifiedLen))
 	out.Write(sizeBytes)
+}
+
+func main() {
+	convertFile("/tmp/a.mp3", "/tmp/out.mp3")
 }
