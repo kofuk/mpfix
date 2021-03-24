@@ -26,6 +26,14 @@ func writeN(writer *bufio.Writer, buf []byte, n int) bool {
 	return true
 }
 
+func checkAndWrite(reader *bufio.Reader, writer *bufio.Writer, buf []byte,
+	checker func(buf []byte) bool) bool {
+	if !readN(reader, buf, len(buf)) || !checker(buf) || !writeN(writer, buf, len(buf)) {
+		return false
+	}
+	return true
+}
+
 func checkSig(buf []byte) bool {
 	if buf[0] == 'I' && buf[1] == 'D' && buf[2] == '3' {
 		return true
@@ -103,33 +111,15 @@ func convertFile(inPath, outPath string) bool {
 	writer := bufio.NewWriter(out)
 
 	buf := make([]byte, 4096)
-	if !readN(reader, buf, 3) {
-		return false
-	}
-	if !checkSig(buf) {
-		return false
-	}
-	if !writeN(writer, buf, 3) {
+	if !checkAndWrite(reader, writer, buf[:3], checkSig) {
 		return false
 	}
 
-	if !readN(reader, buf, 2) {
-		return false
-	}
-	if !checkVersion(buf) {
-		return false
-	}
-	if !writeN(writer, buf, 2) {
+	if !checkAndWrite(reader, writer, buf[:2], checkVersion) {
 		return false
 	}
 
-	if !readN(reader, buf, 1) {
-		return false
-	}
-	if !checkFlags(buf) {
-		return false
-	}
-	if !writeN(writer, buf, 1) {
+	if !checkAndWrite(reader, writer, buf[:1], checkFlags) {
 		return false
 	}
 
