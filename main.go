@@ -212,10 +212,8 @@ func convertFile(inPath, outPath string) bool {
 			if !writeN(writer, buf, 10) {
 				return false
 			}
-			if fsize > len(buf) {
-				log.Fatal("Too large frame:", fsize)
-			}
-			if !readN(reader, buf, fsize) || !writeN(writer, buf, fsize) {
+
+			if _, err := io.CopyN(writer, reader, int64(fsize)); err != nil {
 				return false
 			}
 		}
